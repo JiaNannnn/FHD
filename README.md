@@ -31,7 +31,7 @@ A Streamlit-based application for managing and exporting historical data from Io
    pip install -r univers_app/requirements.txt
    ```
 
-   **Important**: This application requires the `enos-poseidon` package, not `poseidon`. Make sure you're using the correct package name and version in your requirements.txt file.
+   **Note**: This application uses an embedded version of the poseidon library (included in the `vendor` directory), so you don't need to install `enos-poseidon` separately.
 
 3. Configure your API credentials:
    - Edit `univers_app/config.py` with your API credentials
@@ -67,7 +67,7 @@ This application is designed to be deployed on Streamlit Cloud:
    - Sets up a virtual environment for your application
    - Serves your application with HTTPS
 
-   **Note**: Ensure that all packages in your requirements.txt file specify versions that actually exist on PyPI. Streamlit Cloud will fail to deploy if it cannot find the exact package versions you've specified.
+   **Note**: The application uses the embedded poseidon library from the `vendor` directory, eliminating any dependency issues with the external `enos-poseidon` package.
 
 4. For secure credential management:
    - Use Streamlit's secrets management for API keys
@@ -88,6 +88,8 @@ This application is designed to be deployed on Streamlit Cloud:
     - `export_historical_data.py` - Historical data export functionality
   - `utils/` - Utility functions
     - `time_utils.py` - Time-related utility functions
+  - `vendor/` - Embedded third-party libraries
+    - `poseidon/` - Custom poseidon library with both sync and async API functionality
   - `requirements.txt` - Python dependencies
 
 ## Development
@@ -102,18 +104,19 @@ To add a new project, update the `DEFAULT_CONFIGS` dictionary in `config.py`.
 2. Add the module to the selection list in `main.py`
 3. Implement the module's functionality
 
+### Updating the Embedded Poseidon Library
+
+If you need to update the poseidon library functionality:
+
+1. Modify the files in the `vendor/poseidon/` directory
+2. Test your changes locally
+3. Commit and push to deploy to Streamlit Cloud
+
 ## Troubleshooting
 
-- **Import Error with Poseidon**: Make sure you're using `enos-poseidon` in your requirements.txt, not `poseidon`
-- **Package Version Errors**: Ensure all package versions in requirements.txt actually exist on PyPI. For `enos-poseidon`, available versions include 0.1.5, 0.1.6, 0.1.8, 0.1.9, 0.2.0 (not 0.1.0)
 - **API Key Format Issues**: Ensure your API keys contain hyphens and follow the correct format
 - **File Download Issues**: When deployed on Streamlit Cloud, use the browser download buttons rather than local file saving
-- **Missing `a_urlopen` Method**: The application now includes a fallback mechanism that creates an asynchronous wrapper around the synchronous `urlopen` method when the `a_urlopen` method is missing. This ensures compatibility between:
-  - Local environments with custom poseidon library modifications
-  - Streamlit Cloud deployments with the standard enos-poseidon package
-  - You'll see a notification in the sidebar when this compatibility mode is active
 - **Deployment Failures**: Check the deployment logs on Streamlit Cloud for specific error messages. Common issues include:
-  - Non-existent package versions
   - Python version compatibility problems
   - Missing dependencies
   - Import errors

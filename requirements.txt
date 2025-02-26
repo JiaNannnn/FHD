@@ -3,4 +3,4 @@ pandas==2.1.4
 python-dotenv==1.0.0
 pytz==2023.3
 asyncio==3.4.3
-enos-poseidon>=0.1.5  # Using an available version instead of 0.1.0 
+# enos-poseidon is no longer needed - using embedded version 

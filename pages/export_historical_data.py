@@ -5,24 +5,13 @@ This module provides functionality to export historical data from IoT devices.
 It handles searching for models, device assets, and retrieving/transforming historical data.
 """
 try:
-    # Try importing from enos-poseidon package first
-    from poseidon import poseidon
-    
-    # Check if a_urlopen is available, if not, create it
-    if not hasattr(poseidon, 'a_urlopen'):
-        # Create async wrapper around the synchronous urlopen
-        async def async_wrapper(*args, **kwargs):
-            # This simply calls the synchronous version
-            return poseidon.urlopen(*args, **kwargs)
-            
-        # Add the async method to poseidon module
-        poseidon.a_urlopen = async_wrapper
-        print("Added async wrapper for poseidon.urlopen")
-        
+    # Try importing from our embedded vendor package first
+    from vendor.poseidon import poseidon
+    print("Using embedded poseidon module")
 except ImportError:
     try:
-        # Try alternative import pattern for enos-poseidon
-        import poseidon
+        # Next try importing from enos-poseidon package
+        from poseidon import poseidon
         
         # Check if a_urlopen is available, if not, create it
         if not hasattr(poseidon, 'a_urlopen'):
@@ -36,20 +25,36 @@ except ImportError:
             print("Added async wrapper for poseidon.urlopen")
             
     except ImportError:
-        # If all imports fail, create a mock for development/testing
-        class MockPoseidon:
-            @staticmethod
-            def urlopen(access_key, secret_key, url, data):
-                print(f"MOCK API CALL: {url}")
-                return {"data": {"items": []}}
+        try:
+            # Try alternative import pattern for enos-poseidon
+            import poseidon
+            
+            # Check if a_urlopen is available, if not, create it
+            if not hasattr(poseidon, 'a_urlopen'):
+                # Create async wrapper around the synchronous urlopen
+                async def async_wrapper(*args, **kwargs):
+                    # This simply calls the synchronous version
+                    return poseidon.urlopen(*args, **kwargs)
+                    
+                # Add the async method to poseidon module
+                poseidon.a_urlopen = async_wrapper
+                print("Added async wrapper for poseidon.urlopen")
                 
-            @staticmethod
-            async def a_urlopen(access_key, secret_key, url, data):
-                print(f"MOCK ASYNC API CALL: {url}")
-                return {"data": {"items": []}}
-        
-        poseidon = MockPoseidon()
-        print("Using mock poseidon module (API calls will not work)")
+        except ImportError:
+            # If all imports fail, create a mock for development/testing
+            class MockPoseidon:
+                @staticmethod
+                def urlopen(access_key, secret_key, url, data):
+                    print(f"MOCK API CALL: {url}")
+                    return {"data": {"items": []}}
+                    
+                @staticmethod
+                async def a_urlopen(access_key, secret_key, url, data):
+                    print(f"MOCK ASYNC API CALL: {url}")
+                    return {"data": {"items": []}}
+            
+            poseidon = MockPoseidon()
+            print("Using mock poseidon module (API calls will not work)")
 
 import json
 import os
@@ -63,6 +68,10 @@ from utils.time_utils import current_milli_time, round_to_nearest_interval, spli
 # Display an info message if we had to add the async wrapper
 if hasattr(poseidon, 'a_urlopen') and not hasattr(poseidon, '_original_a_urlopen'):
     st.sidebar.info("📌 Using synchronous fallback for asynchronous API calls. This may affect performance but ensures compatibility with Streamlit Cloud.")
+
+# Display a message indicating which poseidon module we're using
+if 'vendor.poseidon' in str(poseidon.__module__):
+    st.sidebar.success("✅ Using embedded poseidon module with native async support")
 
 class HistoricalDataExporter:
     """
