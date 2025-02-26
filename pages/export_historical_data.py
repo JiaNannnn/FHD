@@ -7,10 +7,34 @@ It handles searching for models, device assets, and retrieving/transforming hist
 try:
     # Try importing from enos-poseidon package first
     from poseidon import poseidon
+    
+    # Check if a_urlopen is available, if not, create it
+    if not hasattr(poseidon, 'a_urlopen'):
+        # Create async wrapper around the synchronous urlopen
+        async def async_wrapper(*args, **kwargs):
+            # This simply calls the synchronous version
+            return poseidon.urlopen(*args, **kwargs)
+            
+        # Add the async method to poseidon module
+        poseidon.a_urlopen = async_wrapper
+        print("Added async wrapper for poseidon.urlopen")
+        
 except ImportError:
     try:
         # Try alternative import pattern for enos-poseidon
         import poseidon
+        
+        # Check if a_urlopen is available, if not, create it
+        if not hasattr(poseidon, 'a_urlopen'):
+            # Create async wrapper around the synchronous urlopen
+            async def async_wrapper(*args, **kwargs):
+                # This simply calls the synchronous version
+                return poseidon.urlopen(*args, **kwargs)
+                
+            # Add the async method to poseidon module
+            poseidon.a_urlopen = async_wrapper
+            print("Added async wrapper for poseidon.urlopen")
+            
     except ImportError:
         # If all imports fail, create a mock for development/testing
         class MockPoseidon:
@@ -35,6 +59,10 @@ import asyncio
 import pytz
 import streamlit as st
 from utils.time_utils import current_milli_time, round_to_nearest_interval, split_into_daily_intervals
+
+# Display an info message if we had to add the async wrapper
+if hasattr(poseidon, 'a_urlopen') and not hasattr(poseidon, '_original_a_urlopen'):
+    st.sidebar.info("📌 Using synchronous fallback for asynchronous API calls. This may affect performance but ensures compatibility with Streamlit Cloud.")
 
 class HistoricalDataExporter:
     """

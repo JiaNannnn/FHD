@@ -108,6 +108,10 @@ To add a new project, update the `DEFAULT_CONFIGS` dictionary in `config.py`.
 - **Package Version Errors**: Ensure all package versions in requirements.txt actually exist on PyPI. For `enos-poseidon`, available versions include 0.1.5, 0.1.6, 0.1.8, 0.1.9, 0.2.0 (not 0.1.0)
 - **API Key Format Issues**: Ensure your API keys contain hyphens and follow the correct format
 - **File Download Issues**: When deployed on Streamlit Cloud, use the browser download buttons rather than local file saving
+- **Missing `a_urlopen` Method**: The application now includes a fallback mechanism that creates an asynchronous wrapper around the synchronous `urlopen` method when the `a_urlopen` method is missing. This ensures compatibility between:
+  - Local environments with custom poseidon library modifications
+  - Streamlit Cloud deployments with the standard enos-poseidon package
+  - You'll see a notification in the sidebar when this compatibility mode is active
 - **Deployment Failures**: Check the deployment logs on Streamlit Cloud for specific error messages. Common issues include:
   - Non-existent package versions
   - Python version compatibility problems
