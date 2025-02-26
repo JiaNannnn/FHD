@@ -4,7 +4,29 @@ Historical Data Exporter Module
 This module provides functionality to export historical data from IoT devices.
 It handles searching for models, device assets, and retrieving/transforming historical data.
 """
-from poseidon import poseidon
+try:
+    # Try importing from enos-poseidon package first
+    from poseidon import poseidon
+except ImportError:
+    try:
+        # Try alternative import pattern for enos-poseidon
+        import poseidon
+    except ImportError:
+        # If all imports fail, create a mock for development/testing
+        class MockPoseidon:
+            @staticmethod
+            def urlopen(access_key, secret_key, url, data):
+                print(f"MOCK API CALL: {url}")
+                return {"data": {"items": []}}
+                
+            @staticmethod
+            async def a_urlopen(access_key, secret_key, url, data):
+                print(f"MOCK ASYNC API CALL: {url}")
+                return {"data": {"items": []}}
+        
+        poseidon = MockPoseidon()
+        print("Using mock poseidon module (API calls will not work)")
+
 import json
 import os
 import pandas as pd
@@ -177,10 +199,13 @@ class HistoricalDataExporter:
             asset_id (str): Asset ID
             interval_minutes (int, optional): Data interval in minutes for rounding timestamps.
                 Default is 5.
+                
+        Returns:
+            tuple: (csv_data, filename) - The CSV data as a string and the suggested filename
         """
         transformed_data = []
         if len(nested_json_list) == 0 or all(len(row) == 0 for row in nested_json_list):
-            return
+            return None, None
 
         for i in range(len(nested_json_list)):
             for nested_json in nested_json_list[i]:
@@ -200,14 +225,26 @@ class HistoricalDataExporter:
                     }
                     transformed_data.append(transformed_entry)
 
+        if not transformed_data:
+            return None, None
+            
         df = pd.DataFrame(transformed_data)
         df_pivoted = df.pivot_table(index='localtime', columns='pointId', values='pointValue', aggfunc='first').reset_index()
         
+        # Generate CSV data
+        csv_data = df_pivoted.to_csv(index=False)
+        
+        # Create a directory for saving files locally if needed
         if not os.path.exists(self.projectName):
             os.makedirs(self.projectName)
         
+        # Also save a local copy
         output_file = f'{self.projectName}/{asset_name}-{asset_id}.csv'
         df_pivoted.to_csv(output_file, index=False)
+        
+        # Return CSV data and filename for download
+        filename = f"{asset_name}-{asset_id}.csv"
+        return csv_data, filename
 
     async def process_historical_data(self, start_date, end_date, progress_bar, status_text, selected_models=None, interval_minutes=5):
         """
@@ -225,6 +262,9 @@ class HistoricalDataExporter:
         """
         # Convert interval from minutes to seconds
         interval_seconds = interval_minutes * 60
+        
+        # List to store downloadable files
+        download_files = []
         
         assets = self.search_device_assets()
         
@@ -283,4 +323,109 @@ class HistoricalDataExporter:
                         if his_data is not None and his_data.get("data") is not None:
                             result.append(his_data["data"]["items"])
                     
-                    self.transform_json_list(asset_name, result, asset_id, interval_minutes) 
+                    csv_data, filename = self.transform_json_list(asset_name, result, asset_id, interval_minutes)
+                    if csv_data and filename:
+                        download_files.append((csv_data, filename, asset_name))
+        
+        # Display file download options
+        if download_files:
+            # Primary option: Direct browser downloads
+            st.subheader("Download Files")
+            
+            # Show a neat table with download buttons
+            for i, (csv_data, filename, asset_name) in enumerate(download_files):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**{asset_name}** - {filename}")
+                with col2:
+                    st.download_button(
+                        label="Download",
+                        data=csv_data,
+                        file_name=filename,
+                        mime="text/csv",
+                        key=f"download_{filename}"
+                    )
+            
+            # Add option to download all files as ZIP
+            if len(download_files) > 1:
+                st.markdown("---")
+                import io
+                import zipfile
+                
+                # Create ZIP file in memory
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for csv_data, filename, _ in download_files:
+                        zip_file.writestr(filename, csv_data)
+                
+                # Offer ZIP download button
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown("**Download all files in a single ZIP archive**")
+                with col2:
+                    st.download_button(
+                        label="Download ZIP",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"{self.projectName}_export.zip",
+                        mime="application/zip"
+                    )
+            
+            # Secondary option: Local file system (in expander)
+            with st.expander("Save to Local Directory (Advanced)"):
+                st.warning("This option is only available when running Streamlit locally, not on Streamlit Cloud.")
+                
+                # Simple path input
+                save_dir = st.text_input(
+                    "Directory path:", 
+                    value=self.projectName,
+                    help="Enter a path like 'C:/Downloads/data' (Windows) or '/home/user/data' (Linux/Mac)"
+                )
+                
+                # Create directory if needed
+                if st.button("Save All Files"):
+                    if not os.path.exists(save_dir):
+                        try:
+                            os.makedirs(save_dir)
+                            st.success(f"Created directory: {save_dir}")
+                        except Exception as e:
+                            st.error(f"Error creating directory: {str(e)}")
+                            st.stop()
+                    
+                    # Save all files
+                    with st.spinner("Saving files..."):
+                        saved_files = []
+                        for csv_data, filename, _ in download_files:
+                            try:
+                                file_path = os.path.join(save_dir, filename)
+                                with open(file_path, 'w') as f:
+                                    f.write(csv_data)
+                                saved_files.append(file_path)
+                            except Exception as e:
+                                st.error(f"Error saving {filename}: {str(e)}")
+                        
+                        if saved_files:
+                            st.success(f"✅ Saved {len(saved_files)} files to {save_dir}")
+                            with st.expander("View saved file paths"):
+                                for path in saved_files:
+                                    st.code(path)
+        
+        return download_files
+
+# For backwards compatibility with any code that might import ExportHistoricalData
+class ExportHistoricalData(HistoricalDataExporter):
+    """
+    Alias for HistoricalDataExporter for backwards compatibility.
+    
+    This class inherits from HistoricalDataExporter and overrides the __init__ method
+    to match the original ExportHistoricalData signature.
+    """
+    
+    def __init__(self, projectName):
+        """
+        Initialize the ExportHistoricalData with a project name.
+        
+        Args:
+            projectName (str): Name of the project for file organization
+        """
+        super().__init__()
+        self.projectName = projectName 

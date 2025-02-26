@@ -3,4 +3,4 @@ pandas==2.1.4
 python-dotenv==1.0.0
 pytz==2023.3
 asyncio==3.4.3
-poseidon==0.1.0  # Replace with the actual version of your poseidon package 
+enos-poseidon==0.1.0  # Replace with the actual version of your poseidon package 
