@@ -8,6 +8,8 @@ try:
     # Try importing from our embedded vendor package first
     from vendor.poseidon import poseidon
     print("Using embedded poseidon module")
+    # Mark this as our embedded version
+    poseidon._is_embedded = True
 except ImportError:
     try:
         # Next try importing from enos-poseidon package
@@ -70,7 +72,8 @@ if hasattr(poseidon, 'a_urlopen') and not hasattr(poseidon, '_original_a_urlopen
     st.sidebar.info("📌 Using synchronous fallback for asynchronous API calls. This may affect performance but ensures compatibility with Streamlit Cloud.")
 
 # Display a message indicating which poseidon module we're using
-if 'vendor.poseidon' in str(poseidon.__module__):
+# Use a safer check that doesn't rely on __module__ attribute
+if hasattr(poseidon, '_is_embedded'):
     st.sidebar.success("✅ Using embedded poseidon module with native async support")
 
 class HistoricalDataExporter:
