@@ -68,6 +68,9 @@ import streamlit as st
 from utils.time_utils import current_milli_time, round_to_nearest_interval, split_into_daily_intervals
 import time
 import traceback
+import urllib.request
+import socket
+import ssl
 
 # Display an info message if we had to add the async wrapper
 if hasattr(poseidon, 'a_urlopen') and not hasattr(poseidon, '_original_a_urlopen'):
@@ -170,6 +173,9 @@ class HistoricalDataExporter:
         Returns:
             list: List of models with their identifiers
         """
+        # First run a connectivity test to help diagnose issues
+        self._test_network_connectivity()
+        
         # Add debug output
         st.write("### Debug Information")
         debug_expander = st.expander("API Connection Debug Info")
@@ -528,6 +534,158 @@ class HistoricalDataExporter:
                                     st.code(path)
         
         return download_files
+
+    def _test_network_connectivity(self):
+        """
+        Test network connectivity to various endpoints to help diagnose 
+        connectivity issues in Streamlit Cloud.
+        """
+        connectivity_expander = st.expander("Network Connectivity Test")
+        with connectivity_expander:
+            st.write("### Testing Network Connectivity")
+            st.write("This test will check if the application can connect to various endpoints.")
+
+            # Test 1: DNS Resolution
+            st.write("#### 1. DNS Resolution Test")
+            try:
+                api_host = self.api_gateway.replace("https://", "").replace("http://", "").split("/")[0]
+                st.write(f"Resolving DNS for API host: {api_host}")
+                ip_address = socket.gethostbyname(api_host)
+                st.success(f"✅ DNS resolution successful: {api_host} → {ip_address}")
+            except Exception as e:
+                st.error(f"❌ DNS resolution failed: {str(e)}")
+            
+            # Test 2: Public API Test
+            st.write("#### 2. Public API Test")
+            try:
+                st.write("Testing connection to public API (httpbin.org)...")
+                with urllib.request.urlopen("https://httpbin.org/get", timeout=10) as response:
+                    data = json.loads(response.read().decode())
+                    st.success(f"✅ Public API test successful. Response: {data['url']}")
+            except Exception as e:
+                st.error(f"❌ Public API test failed: {str(e)}")
+            
+            # Test 3: API Gateway Ping
+            st.write("#### 3. API Gateway Connection Test")
+            try:
+                api_url = self.api_gateway
+                st.write(f"Testing direct connection to API Gateway: {api_url}")
+                
+                # Extract host and construct URL for HEAD request
+                api_host = api_url.replace("https://", "").replace("http://", "").split("/")[0]
+                test_url = f"https://{api_host}"
+                
+                req = urllib.request.Request(test_url, method="HEAD")
+                context = ssl.create_default_context()
+                
+                try:
+                    with urllib.request.urlopen(req, timeout=10, context=context) as response:
+                        st.success(f"✅ API Gateway connection successful. Status: {response.status}")
+                except urllib.error.HTTPError as e:
+                    # Even a 403 or other error status means we can connect to the server
+                    st.warning(f"⚠️ API Gateway responded with HTTP error {e.code}. This is normal if the server rejects HEAD requests, but indicates network connectivity is working.")
+            except Exception as e:
+                st.error(f"❌ API Gateway connection failed: {str(e)}")
+                st.error("This suggests the API may be blocking requests from Streamlit Cloud or has network restrictions.")
+
+            # Test 4: Try a minimal test request to the API
+            st.write("#### 4. Minimal API Test Request")
+            try:
+                # Create a minimal test request that doesn't require authorization
+                from vendor.poseidon import poseidon
+                
+                # For testing, we'll try both with and without hyphens in keys
+                test_keys = [
+                    (self.accessKey, self.secretKey, "Original keys"),
+                    (self.accessKey.replace("-", ""), self.secretKey.replace("-", ""), "Without hyphens"),
+                    (f"{self.accessKey[:8]}-{self.accessKey[8:]}", f"{self.secretKey[:8]}-{self.secretKey[8:]}", "With single hyphen")
+                ]
+                
+                for access_key, secret_key, desc in test_keys:
+                    st.write(f"Trying minimal API request with {desc}...")
+                    try:
+                        # Simple test endpoint that should exist on most APIs
+                        test_url = f"{self.api_gateway}/healthz"
+                        test_data = {}
+                        
+                        # Use a direct raw request to test
+                        response = poseidon._raw_request(access_key, secret_key, test_url, test_data)
+                        st.success(f"✅ API minimal test successful with {desc}! Response status: {response.status}")
+                        break  # If successful, no need to try other key formats
+                    except Exception as e:
+                        st.error(f"❌ API minimal test failed with {desc}: {str(e)}")
+            except Exception as e:
+                st.error(f"❌ API minimal test setup failed: {str(e)}")
+            
+            # Test 5: Direct HTTP Request with Manual Authentication
+            st.write("#### 5. Direct HTTP Request (Bypassing Poseidon)")
+            try:
+                st.write("Testing direct HTTP request with manual authentication...")
+                
+                # Create a direct HTTP request with authentication headers
+                api_url = f"{self.api_gateway}/model-service/v2.1/thing-models?action=search&orgId={self.orgId}"
+                
+                # Create authentication headers manually
+                timestamp = str(int(time.time() * 1000))
+                
+                # Create signature (simplified version for testing)
+                import base64
+                import hashlib
+                import hmac
+                
+                # Convert secret key to bytes
+                key = self.secretKey.encode('utf-8')
+                
+                # Create message (timestamp)
+                message = timestamp.encode('utf-8')
+                
+                # Create signature
+                signature = hmac.new(key, message, hashlib.sha256).digest()
+                
+                # Encode as base64
+                signature_b64 = base64.b64encode(signature).decode('utf-8')
+                
+                # Set up headers
+                headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': f'AccessKey {self.accessKey}',
+                    'timestamp': timestamp,
+                    'signature': signature_b64
+                }
+                
+                # Create request data
+                data = {
+                    "projection": ["modelId", "modelIdPath", "measurepoints"],
+                    "pagination": {
+                        "pageNo": 1,
+                        "pageSize": 10
+                    }
+                }
+                
+                # Convert data to JSON
+                data_str = json.dumps(data)
+                data_bytes = data_str.encode('utf-8')
+                
+                # Create request
+                req = urllib.request.Request(api_url, data=data_bytes, headers=headers)
+                
+                # Make request
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as response:
+                        st.success(f"✅ Direct HTTP request successful! Status: {response.status}")
+                        
+                        # Read a small amount of data to verify
+                        response_data = response.read(1000).decode('utf-8')
+                        st.write(f"Response preview (first 100 chars): {response_data[:100]}...")
+                except urllib.error.HTTPError as e:
+                    st.error(f"❌ Direct HTTP request failed with HTTP error {e.code}")
+                    error_body = e.read().decode('utf-8')
+                    st.write(f"Error response: {error_body[:200]}...")
+            except Exception as e:
+                st.error(f"❌ Direct HTTP request failed: {str(e)}")
+                st.error(traceback.format_exc())
+
+            st.info("These tests can help determine if the issue is related to network connectivity, API permissions, or authentication format.")
 
 # For backwards compatibility with any code that might import ExportHistoricalData
 class ExportHistoricalData(HistoricalDataExporter):
