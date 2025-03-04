@@ -2,10 +2,11 @@
 Configuration Module
 
 This module contains configuration settings for different projects.
-All configuration is defined directly in this file rather than using environment variables.
+It supports both hardcoded configs (for development) and Streamlit secrets (for deployment).
 """
+import streamlit as st
 
-# Project configurations
+# Project configurations - fallback for development
 DEFAULT_CONFIGS = {
     "Concorde": {
         "ACCESS_KEY": "dfe0cec0-6eed-41ab-af2f-90c97bf0e698",
@@ -51,6 +52,8 @@ def load_config(project_name=None):
     """
     Load configuration for a specific project.
     
+    First tries to load from Streamlit secrets, then falls back to hardcoded configs.
+    
     Args:
         project_name (str, optional): Name of the project to load configuration for.
             If None or not found, returns the default configuration.
@@ -58,6 +61,20 @@ def load_config(project_name=None):
     Returns:
         dict: Configuration dictionary with API credentials
     """
+    # First try to get from Streamlit secrets if available
+    try:
+        if hasattr(st, 'secrets') and 'projects' in st.secrets:
+            # Check if the specific project is in secrets
+            if project_name and project_name in st.secrets['projects']:
+                return st.secrets['projects'][project_name]
+            # If no project specified but we have a default in secrets
+            elif 'default' in st.secrets['projects']:
+                return st.secrets['projects']['default']
+    except:
+        # If any error occurs with secrets, just continue to fallback method
+        pass
+    
+    # Fallback to hardcoded configs
     if project_name and project_name in DEFAULT_CONFIGS:
         return DEFAULT_CONFIGS[project_name]
     else:
@@ -81,6 +98,10 @@ def validate_config(config):
         if not config.get(field):
             return False, f"Missing required configuration: {field}"
     
+    # Skip hyphen validation when in development mode with special flag 
+    if config.get("_DEV_MODE_SKIP_VALIDATION", False):
+        return True, None
+        
     # Validate key format
     access_key = config["ACCESS_KEY"]
     secret_key = config["SECRET_KEY"]

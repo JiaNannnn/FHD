@@ -74,6 +74,41 @@ This application is designed to be deployed on Streamlit Cloud:
    - Navigate to your app settings in Streamlit Cloud
    - Add your API credentials to the secrets section
 
+### Critical: Setting Up Secrets in Streamlit Cloud
+
+If you're experiencing the "No models found" error on Streamlit Cloud, this is most likely due to missing or incorrectly formatted API credentials. Follow these steps to fix it:
+
+1. **Format Your API Keys**: Ensure your API keys contain hyphens (format: xxxx-xxxx-xxxx-xxxx)
+2. **Add Secrets to Streamlit Cloud**:
+   - Go to your app dashboard in Streamlit Cloud
+   - Click on "Settings" → "Secrets"
+   - Copy and paste the following template, replacing with your actual API keys:
+
+```toml
+# Each project should be under the [projects] section
+[projects]
+
+# Default project that will be used if no specific project is selected
+[projects.default]
+ACCESS_KEY = "your-access-key-with-hyphens"
+SECRET_KEY = "your-secret-key-with-hyphens"
+API_GATEWAY = "https://ag-eu2.envisioniot.com"
+ORG_ID = "o16779139592841674"
+PROJECT_NAME = "Default Project"
+
+# Add other projects as needed
+[projects.ProjectName]
+ACCESS_KEY = "project-specific-access-key"
+SECRET_KEY = "project-specific-secret-key"
+API_GATEWAY = "https://api-gateway-url.com"
+ORG_ID = "org-id-value"
+PROJECT_NAME = "Project Name"
+```
+
+3. **Save and Restart**: Click "Save" in the secrets manager, then restart your Streamlit app
+
+A sample secrets template file is available at `.streamlit/secrets_example.toml` for reference.
+
 ## Browser Download vs. Local File Saving
 
 - When deployed on Streamlit Cloud, use the browser download functionality to get your exported files
@@ -91,6 +126,8 @@ This application is designed to be deployed on Streamlit Cloud:
   - `vendor/` - Embedded third-party libraries
     - `poseidon/` - Custom poseidon library with both sync and async API functionality
   - `requirements.txt` - Python dependencies
+  - `.streamlit/` - Streamlit configuration
+     - `secrets_example.toml` - Example secrets file for Streamlit Cloud deployment
 
 ## Development
 
@@ -114,7 +151,21 @@ If you need to update the poseidon library functionality:
 
 ## Troubleshooting
 
-- **API Key Format Issues**: Ensure your API keys contain hyphens and follow the correct format
+### "No models found" Error
+
+This error typically occurs when:
+
+1. **API Credentials**: Your API keys are missing or incorrectly formatted
+   - Solution: Add properly formatted API keys with hyphens to Streamlit Cloud secrets
+
+2. **Connection Issues**: The application cannot connect to the API
+   - Solution: Check if the API Gateway URL is correct and accessible
+
+3. **Validation Failures**: The credential validation is failing
+   - Solution: Ensure your API keys follow the required format with hyphens
+
+### Other Common Issues
+
 - **File Download Issues**: When deployed on Streamlit Cloud, use the browser download buttons rather than local file saving
 - **Deployment Failures**: Check the deployment logs on Streamlit Cloud for specific error messages. Common issues include:
   - Python version compatibility problems
