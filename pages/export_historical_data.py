@@ -66,6 +66,8 @@ import asyncio
 import pytz
 import streamlit as st
 from utils.time_utils import current_milli_time, round_to_nearest_interval, split_into_daily_intervals
+import time
+import traceback
 
 # Display an info message if we had to add the async wrapper
 if hasattr(poseidon, 'a_urlopen') and not hasattr(poseidon, '_original_a_urlopen'):
@@ -120,8 +122,24 @@ class HistoricalDataExporter:
             Exception: If the API call fails
         """
         try:
-            return poseidon.urlopen(self.accessKey, self.secretKey, url, data)
+            # Debug - log that we're attempting a call
+            print(f"Attempting API call to {url}")
+            print(f"Request data: {json.dumps(data)}")
+            
+            # Perform the actual API call
+            response = poseidon.urlopen(self.accessKey, self.secretKey, url, data)
+            
+            # Debug - log success
+            print(f"API call successful. Response keys: {list(response.keys()) if isinstance(response, dict) else 'Not a dict'}")
+            return response
+            
         except Exception as e:
+            # Debug - log the error
+            print(f"API call failed with error: {str(e)}")
+            print(f"Error type: {type(e).__name__}")
+            if hasattr(e, 'response'):
+                print(f"Response from server: {e.response}")
+                
             st.error(f"API Error: {str(e)}")
             raise
 
@@ -152,17 +170,77 @@ class HistoricalDataExporter:
         Returns:
             list: List of models with their identifiers
         """
-        url = f'{self.api_gateway}/model-service/v2.1/thing-models?action=search&orgId={self.orgId}'
-        data = {
-            "projection": ["modelId", "modelIdPath", "measurepoints"],
-            "pagination": {
-                "pageNo": 1,
-                "pageSize": 500
+        # Add debug output
+        st.write("### Debug Information")
+        debug_expander = st.expander("API Connection Debug Info")
+        with debug_expander:
+            st.write("Attempting to connect to API...")
+            st.write(f"API Gateway: {self.api_gateway}")
+            st.write(f"Organization ID: {self.orgId}")
+            
+            # Only show masked versions of keys
+            access_key_masked = f"{self.accessKey[:4]}...{self.accessKey[-4:]}" if self.accessKey else "None"
+            secret_key_masked = f"{self.secretKey[:4]}...{self.secretKey[-4:]}" if self.secretKey else "None"
+            st.write(f"Access Key (masked): {access_key_masked}")
+            st.write(f"Secret Key (masked): {secret_key_masked}")
+            
+            # Check format of keys
+            has_hyphens_access = "-" in (self.accessKey or "")
+            has_hyphens_secret = "-" in (self.secretKey or "")
+            st.write(f"Access Key contains hyphens: {has_hyphens_access}")
+            st.write(f"Secret Key contains hyphens: {has_hyphens_secret}")
+        
+        try:
+            url = f'{self.api_gateway}/model-service/v2.1/thing-models?action=search&orgId={self.orgId}'
+            data = {
+                "projection": ["modelId", "modelIdPath", "measurepoints"],
+                "pagination": {
+                    "pageNo": 1,
+                    "pageSize": 500
+                }
             }
-        }
-        req = self._safe_urlopen(url, data)
-        json_data = req["data"]['items']
-        return self._extract_model_and_identifiers(json_data)
+            
+            with debug_expander:
+                st.write(f"Making API call to URL: {url}")
+                st.json(data)
+            
+            start_time = time.time()
+            response = self._safe_urlopen(url, data)
+            end_time = time.time()
+            
+            with debug_expander:
+                st.write(f"API call completed in {end_time - start_time:.2f} seconds")
+                
+                # Check for response error codes
+                if isinstance(response, dict) and "code" in response:
+                    st.write(f"API response code: {response.get('code')}")
+                    st.write(f"API response message: {response.get('message', 'No message')}")
+                
+                # Show response structure but not actual data
+                if response:
+                    st.write("Response structure:")
+                    resp_keys = "Response has keys: " + ", ".join(response.keys()) if isinstance(response, dict) else "Response is not a dictionary"
+                    st.write(resp_keys)
+                    
+                    if isinstance(response, dict) and "data" in response:
+                        data_keys = "Data has keys: " + ", ".join(response["data"].keys()) if isinstance(response["data"], dict) else "Data is not a dictionary"
+                        st.write(data_keys)
+                        
+                        if isinstance(response["data"], dict) and "items" in response["data"]:
+                            items_length = f"Items list length: {len(response['data']['items'])}"
+                            st.write(items_length)
+                else:
+                    st.error("Empty response from API")
+            
+            if response and response.get("data") and response["data"].get("items"):
+                json_data = response["data"]["items"]
+                return self._extract_model_and_identifiers(json_data)
+            return []
+        except Exception as e:
+            with debug_expander:
+                st.error(f"Exception occurred: {str(e)}")
+                st.error(traceback.format_exc())
+            raise
 
     def _extract_model_and_identifiers(self, json_data):
         """
