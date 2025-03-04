@@ -71,6 +71,7 @@ import traceback
 import urllib.request
 import socket
 import ssl
+from config import make_api_call, make_async_api_call
 
 # Display an info message if we had to add the async wrapper
 if hasattr(poseidon, 'a_urlopen') and not hasattr(poseidon, '_original_a_urlopen'):
@@ -96,6 +97,7 @@ class HistoricalDataExporter:
         self.api_gateway = None
         self.orgId = None
         self.projectName = None
+        self.config = None
 
     def configure(self, config):
         """
@@ -109,10 +111,11 @@ class HistoricalDataExporter:
         self.api_gateway = config["API_GATEWAY"]
         self.orgId = config["ORG_ID"]
         self.projectName = config["PROJECT_NAME"]
+        self.config = config
         
     def _safe_urlopen(self, url, data):
         """
-        Wrapper around poseidon.urlopen with error handling.
+        Wrapper around centralized make_api_call function with error handling.
         
         Args:
             url (str): URL to open
@@ -125,30 +128,15 @@ class HistoricalDataExporter:
             Exception: If the API call fails
         """
         try:
-            # Debug - log that we're attempting a call
-            print(f"Attempting API call to {url}")
-            print(f"Request data: {json.dumps(data)}")
-            
-            # Perform the actual API call
-            response = poseidon.urlopen(self.accessKey, self.secretKey, url, data)
-            
-            # Debug - log success
-            print(f"API call successful. Response keys: {list(response.keys()) if isinstance(response, dict) else 'Not a dict'}")
-            return response
-            
+            # Use centralized API call function
+            return make_api_call(url, data, self.config)
         except Exception as e:
-            # Debug - log the error
-            print(f"API call failed with error: {str(e)}")
-            print(f"Error type: {type(e).__name__}")
-            if hasattr(e, 'response'):
-                print(f"Response from server: {e.response}")
-                
             st.error(f"API Error: {str(e)}")
             raise
 
     async def _safe_a_urlopen(self, url, data):
         """
-        Wrapper around poseidon.a_urlopen with error handling.
+        Wrapper around centralized make_async_api_call function with error handling.
         
         Args:
             url (str): URL to open
@@ -161,7 +149,8 @@ class HistoricalDataExporter:
             Exception: If the API call fails
         """
         try:
-            return await poseidon.a_urlopen(self.accessKey, self.secretKey, url, data)
+            # Use centralized async API call function
+            return await make_async_api_call(url, data, self.config)
         except Exception as e:
             st.error(f"API Error: {str(e)}")
             raise

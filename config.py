@@ -5,6 +5,9 @@ This module contains configuration settings for different projects.
 It supports both hardcoded configs (for development) and Streamlit secrets (for deployment).
 """
 import streamlit as st
+import json
+import time
+import traceback
 
 # Project configurations - fallback for development
 DEFAULT_CONFIGS = {
@@ -48,6 +51,9 @@ DEFAULT_CONFIG = {
     "PROJECT_NAME": "Default"
 }
 
+# Store active configuration globally
+_ACTIVE_CONFIG = None
+
 def load_config(project_name=None):
     """
     Load configuration for a specific project.
@@ -61,24 +67,30 @@ def load_config(project_name=None):
     Returns:
         dict: Configuration dictionary with API credentials
     """
+    global _ACTIVE_CONFIG
+    
     # First try to get from Streamlit secrets if available
     try:
         if hasattr(st, 'secrets') and 'projects' in st.secrets:
             # Check if the specific project is in secrets
             if project_name and project_name in st.secrets['projects']:
-                return st.secrets['projects'][project_name]
+                _ACTIVE_CONFIG = st.secrets['projects'][project_name]
+                return _ACTIVE_CONFIG
             # If no project specified but we have a default in secrets
             elif 'default' in st.secrets['projects']:
-                return st.secrets['projects']['default']
+                _ACTIVE_CONFIG = st.secrets['projects']['default']
+                return _ACTIVE_CONFIG
     except:
         # If any error occurs with secrets, just continue to fallback method
         pass
     
     # Fallback to hardcoded configs
     if project_name and project_name in DEFAULT_CONFIGS:
-        return DEFAULT_CONFIGS[project_name]
+        _ACTIVE_CONFIG = DEFAULT_CONFIGS[project_name]
+        return _ACTIVE_CONFIG
     else:
-        return DEFAULT_CONFIG
+        _ACTIVE_CONFIG = DEFAULT_CONFIG
+        return _ACTIVE_CONFIG
 
 def validate_config(config):
     """
@@ -153,4 +165,98 @@ def validate_config(config):
     if len(secret_key.split("-")) < 2:
         return False, "Invalid SECRET_KEY format. Key must have at least two parts separated by hyphens."
     
-    return True, None 
+    return True, None
+
+def make_api_call(url, data=None, config=None):
+    """
+    Make an API call using the poseidon library with centralized credential handling.
+    
+    Args:
+        url (str): API endpoint URL
+        data (dict, optional): Request data. Defaults to None.
+        config (dict, optional): Configuration override. If None, uses active config.
+        
+    Returns:
+        dict: API response
+        
+    Raises:
+        Exception: If API call fails
+    """
+    from vendor.poseidon import poseidon
+    
+    # Use provided config or fall back to active config
+    cfg = config or _ACTIVE_CONFIG
+    if not cfg:
+        raise ValueError("No active configuration. Call load_config() first.")
+    
+    # Validate config
+    is_valid, error_message = validate_config(cfg)
+    if not is_valid:
+        raise ValueError(f"Invalid configuration: {error_message}")
+    
+    try:
+        # Debug - log API call
+        print(f"Attempting API call to {url}")
+        print(f"Request data: {json.dumps(data) if data else None}")
+        
+        # Make API call
+        response = poseidon.urlopen(
+            cfg["ACCESS_KEY"], 
+            cfg["SECRET_KEY"], 
+            url, 
+            data
+        )
+        
+        # Debug - log success
+        print(f"API call successful. Response keys: {list(response.keys()) if isinstance(response, dict) else 'Not a dict'}")
+        return response
+        
+    except Exception as e:
+        # Debug - log error
+        print(f"API call failed with error: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        if hasattr(e, 'response'):
+            print(f"Response from server: {e.response}")
+        
+        # Re-raise exception
+        raise
+
+async def make_async_api_call(url, data=None, config=None):
+    """
+    Make an asynchronous API call using the poseidon library with centralized credential handling.
+    
+    Args:
+        url (str): API endpoint URL
+        data (dict, optional): Request data. Defaults to None.
+        config (dict, optional): Configuration override. If None, uses active config.
+        
+    Returns:
+        dict: API response
+        
+    Raises:
+        Exception: If API call fails
+    """
+    from vendor.poseidon import poseidon
+    
+    # Use provided config or fall back to active config
+    cfg = config or _ACTIVE_CONFIG
+    if not cfg:
+        raise ValueError("No active configuration. Call load_config() first.")
+    
+    # Validate config
+    is_valid, error_message = validate_config(cfg)
+    if not is_valid:
+        raise ValueError(f"Invalid configuration: {error_message}")
+    
+    try:
+        # Make API call
+        return await poseidon.a_urlopen(
+            cfg["ACCESS_KEY"], 
+            cfg["SECRET_KEY"], 
+            url, 
+            data
+        )
+        
+    except Exception as e:
+        # Re-raise exception
+        raise 
